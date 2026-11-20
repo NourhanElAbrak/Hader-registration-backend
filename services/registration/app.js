@@ -31,7 +31,9 @@ app.get('/health', async (req, res, next) => {
   }
 });
 
-// Step 4 adds the workshop and registration routes here.
+// The service's routes. Express 5 sends any error thrown in them to errorHandler.
+app.use('/workshops', require('./routes/workshops'));
+app.use('/registrations', require('./routes/registrations'));
 
 app.use(notFoundRoute);
 app.use(errorHandler);
