@@ -66,6 +66,9 @@ ALTER TABLE public.profiles      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workshops     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.registrations ENABLE ROW LEVEL SECURITY;
 
+-- 5) SECURITY: block direct calls to the automatic sign-up function (Security Advisor fix)
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+
 -- ---------------------------------------------------------------------
 -- To make someone an organizer (run separately, after they have signed up):
 --   UPDATE public.profiles SET role = 'organizer'
