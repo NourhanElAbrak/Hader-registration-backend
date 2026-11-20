@@ -32,6 +32,7 @@ app.get('/health', async (req, res, next) => {
 });
 
 // The service's routes. Express 5 sends any error thrown in them to errorHandler.
+app.use('/me', require('./routes/me'));
 app.use('/workshops', require('./routes/workshops'));
 app.use('/registrations', require('./routes/registrations'));
 
