@@ -20,7 +20,7 @@ loginForm.addEventListener('submit', async (e) => {
   try {
     await login(document.getElementById('login-email').value.trim(),
                 document.getElementById('login-password').value);
-    window.location.href = '/registration/workshops.html';
+    window.location.href = appUrl('registration/workshops.html');
   } catch (err) {
     showMessage(message, err.message, 'error');
   } finally {
@@ -37,7 +37,7 @@ signupForm.addEventListener('submit', async (e) => {
                                   document.getElementById('signup-email').value.trim(),
                                   document.getElementById('signup-password').value);
     if (loggedIn) {
-      window.location.href = '/registration/workshops.html';
+      window.location.href = appUrl('registration/workshops.html');
     } else {
       showTab('login');
       showMessage(message, 'Account created. Check your email to confirm it, then log in.', 'success');
@@ -50,4 +50,4 @@ signupForm.addEventListener('submit', async (e) => {
 });
 
 // Already logged in? Go straight to the workshops.
-if (getToken()) window.location.href = '/registration/workshops.html';
+if (getToken()) window.location.href = appUrl('registration/workshops.html');

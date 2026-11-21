@@ -91,14 +91,14 @@ function seatStrip(total, left) {
 async function loadNav() {
   const me = await api(CONFIG.REGISTRATION_API, '/me');
   const nav = document.getElementById('nav');
-  const brand = el('a', { href: '/registration/workshops.html', className: 'brand' }, 'Hader');
+  const brand = el('a', { href: appUrl('registration/workshops.html'), className: 'brand' }, 'Hader');
   brand.append(el('span', { lang: 'ar' }, 'حاضر'));
-  const links = [brand, el('a', { href: '/registration/workshops.html' }, 'Workshops')];
+  const links = [brand, el('a', { href: appUrl('registration/workshops.html') }, 'Workshops')];
   if (me.role === 'attendee') {
-    links.push(el('a', { href: '/registration/my-registrations.html' }, 'My seats'));
+    links.push(el('a', { href: appUrl('registration/my-registrations.html') }, 'My seats'));
   }
   for (const a of links.slice(1)) {
-    if (a.getAttribute('href') === window.location.pathname) a.setAttribute('aria-current', 'page');
+    if (new URL(a.href).pathname === window.location.pathname) a.setAttribute('aria-current', 'page');
   }
   nav.replaceChildren(...links);
   const right = el('span', { className: 'nav-right' });

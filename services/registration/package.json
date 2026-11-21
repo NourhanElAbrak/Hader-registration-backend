@@ -6,7 +6,9 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "zip": "node scripts/zip.js",
+    "lambda-env": "node scripts/lambda-env.js"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
@@ -14,5 +16,8 @@
     "jose": "^5.10.0",
     "pg": "^8.16.0",
     "serverless-http": "^3.2.0"
+  },
+  "devDependencies": {
+    "archiver": "^7.0.1"
   }
 }

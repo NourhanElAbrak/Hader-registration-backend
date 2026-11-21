@@ -35,13 +35,13 @@ function getToken() {
 
 function logout() {
   sessionStorage.removeItem(TOKEN_KEY);
-  window.location.href = '/login.html';
+  window.location.href = appUrl('login.html');
 }
 
 // Pages that need a login call this first. No token -> back to the login page.
 function requireLoginPage() {
   if (!getToken()) {
-    window.location.href = '/login.html';
+    window.location.href = appUrl('login.html');
     return false;
   }
   return true;

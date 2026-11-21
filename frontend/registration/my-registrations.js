@@ -29,7 +29,7 @@ async function loadRegistrations() {
     const regs = await api(API, '/registrations/me');
     if (regs.length === 0) {
       const empty = el('p', { className: 'empty' }, 'You have no seats yet. ');
-      empty.append(el('a', { href: '/registration/workshops.html' }, 'Find a workshop'));
+      empty.append(el('a', { href: appUrl('registration/workshops.html') }, 'Find a workshop'));
       list.replaceChildren(empty);
       return;
     }
