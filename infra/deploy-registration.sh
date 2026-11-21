@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Deploys the Workshop & Registration Service to Floci (local AWS), following Lab 7:
-#   IAM role -> Lambda function -> API Gateway (HTTP API) -> website on S3.
+# Deploys the Workshop & Registration Service API to Floci (local AWS), following Lab 7:
+#   IAM role -> Lambda function -> API Gateway (HTTP API).
+# The website itself is hosted on Vercel (see the HaderApp repo).
 # Run it from the HaderApp folder in Git Bash:   bash infra/deploy-registration.sh
 # Safe to run again: it updates what already exists instead of creating it twice.
 set -euo pipefail
@@ -12,24 +13,21 @@ FN="hader-registration-api"
 ROLE="hader-registration-role"
 POLICY="hader-registration-logs"
 API_NAME="hader-http-api"
-BUCKET="hader-web"
-SITE_ORIGIN="${SITE_ORIGIN:-http://localhost:4566}"
 SERVICE="services/registration"
-BUILD="infra/.site-build"
 
 step() { echo; echo "== $1"; }
 none() { [ -z "$1" ] || [ "$1" = "None" ]; }
 
 [ -f "$SERVICE/.env" ] || { echo "Run this from the HaderApp folder ($SERVICE/.env not found)."; exit 1; }
 
-step "1/6 Check that we are talking to Floci"
+step "1/5 Check that we are talking to Floci"
 acct=$(aws sts get-caller-identity --query Account --output text)
 if [ "$acct" != "$ACCOUNT" ]; then
   echo "Account is $acct, expected $ACCOUNT. Run: export AWS_PROFILE=floci"; exit 1
 fi
 echo "OK, account $acct"
 
-step "2/6 IAM role: the function may only write its own logs (least privilege)"
+step "2/5 IAM role: the function may only write its own logs (least privilege)"
 if ! aws iam get-role --role-name "$ROLE" >/dev/null 2>&1; then
   aws iam create-role --role-name "$ROLE" \
     --assume-role-policy-document file://infra/iam/lambda-trust-policy.json \
@@ -41,9 +39,9 @@ aws iam put-role-policy --role-name "$ROLE" --policy-name "$POLICY" \
   --policy-document file://infra/iam/registration-logs-policy.json
 echo "Policy $POLICY attached"
 
-step "3/6 Build lambda.zip and create or update the Lambda function"
+step "3/5 Build lambda.zip and create or update the Lambda function"
 (cd "$SERVICE" && npm install --silent && npm run zip)
-ENV_JSON=$(cd "$SERVICE" && node scripts/lambda-env.js "$SITE_ORIGIN,http://localhost:8080")
+ENV_JSON=$(cd "$SERVICE" && node scripts/lambda-env.js)
 
 if aws lambda get-function --function-name "$FN" >/dev/null 2>&1; then
   aws lambda update-function-code --function-name "$FN" \
@@ -63,7 +61,7 @@ fi
 rm -f "$SERVICE/lambda.zip"
 echo "Function $FN is ready"
 
-step "4/6 API Gateway: one HTTP API, only the routes this service needs"
+step "4/5 API Gateway: one HTTP API, only the routes this service needs"
 API_ID=$(aws apigatewayv2 get-apis --query "Items[?Name=='$API_NAME'].ApiId | [0]" --output text)
 if none "$API_ID"; then
   API_ID=$(aws apigatewayv2 create-api --name "$API_NAME" --protocol-type HTTP --query ApiId --output text)
@@ -123,26 +121,11 @@ else
 fi
 API_URL="http://$API_ID.execute-api.localhost.floci.io:4566"
 
-step "5/6 Website on S3 (frontend files only: never .env or backend code)"
-aws s3 mb "s3://$BUCKET" >/dev/null 2>&1 || true
-rm -rf "$BUILD"
-mkdir -p "$BUILD"
-cp -r frontend/. "$BUILD/"
-rm -rf "$BUILD/node_modules" "$BUILD/package.json" "$BUILD/package-lock.json"
-sed -i "s#REGISTRATION_API: '[^']*'#REGISTRATION_API: '$API_URL'#" "$BUILD/shared/config.js"
-aws s3 rm "s3://$BUCKET" --recursive >/dev/null
-aws s3 cp "$BUILD" "s3://$BUCKET" --recursive --exclude "*" --include "*.html" --content-type text/html --only-show-errors
-aws s3 cp "$BUILD" "s3://$BUCKET" --recursive --exclude "*" --include "*.css" --content-type text/css --only-show-errors
-aws s3 cp "$BUILD" "s3://$BUCKET" --recursive --exclude "*" --include "*.js" --content-type text/javascript --only-show-errors
-rm -rf "$BUILD"
-aws s3 ls "s3://$BUCKET" --recursive | awk '{print "  " $4}'
-
-step "6/6 Quick test"
+step "5/5 Quick test"
 echo "GET $API_URL/health"
 curl -s -m 30 "$API_URL/health" || echo "(no answer yet: wait 30 seconds and try again)"
 echo
 echo
 echo "Done."
 echo "  API:      $API_URL"
-echo "  Website:  $SITE_ORIGIN/$BUCKET/index.html"
 echo "  Logs:     aws logs tail /aws/lambda/$FN --since 15m --format short"
