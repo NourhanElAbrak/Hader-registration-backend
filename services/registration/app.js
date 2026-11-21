@@ -1,7 +1,7 @@
 // The Express application. Used by server.js (on your laptop) and lambda.js (in AWS).
 const express = require('express');
 const pool = require('./db/pool');
-const { notFoundRoute, errorHandler } = require('./middleware/errors');
+const { ApiError, notFoundRoute, errorHandler } = require('./middleware/errors');
 
 const app = express();
 
@@ -20,6 +20,26 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '10kb' }));
+
+// Through API Gateway the body can arrive without a Content-Type that Express recognises.
+// Express then leaves it as raw bytes, so we unpack it as JSON here (same 10 kB limit).
+const MAX_BODY = 10 * 1024;
+app.use((req, res, next) => {
+  if (!Buffer.isBuffer(req.body) && typeof req.body !== 'string') return next();
+  const raw = req.body.toString('utf8');
+  if (raw.trim() === '') { req.body = undefined; return next(); }
+  if (Buffer.byteLength(raw) > MAX_BODY) {
+    return next(new ApiError(413, 'PAYLOAD_TOO_LARGE', 'Request body is too large.'));
+  }
+  // Plain JSON first; some gateways send it base64-encoded without saying so.
+  for (const text of [raw, Buffer.from(raw, 'base64').toString('utf8')]) {
+    try {
+      req.body = JSON.parse(text);
+      return next();
+    } catch (e) { /* try the next form */ }
+  }
+  next(new ApiError(400, 'INVALID_JSON', 'Request body must be valid JSON.'));
+});
 
 // Health check: proves the API is running AND can reach the database.
 app.get('/health', async (req, res, next) => {
