@@ -16,7 +16,7 @@ router.get('/me', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const id = parseId(req.params.id);
   const result = await registrations.cancel(id, req.user.userId);
-  console.log(JSON.stringify({ event: 'registration_cancelled', registrationId: id, workshopId: result.workshopId, userId: req.user.userId }));
+  console.log(JSON.stringify({ event: 'registration_cancelled', registrationId: id, workshopId: result.workshopId, seatGivenToWaitlist: result.seatGivenToWaitlist, userId: req.user.userId }));
   res.json(result);
 });
 

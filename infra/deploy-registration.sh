@@ -81,16 +81,23 @@ ROUTES=(
   "GET /workshops"
   "POST /workshops"
   "PUT /workshops/{id}"
+  "DELETE /workshops/{id}"
   "POST /workshops/{id}/registrations"
   "GET /workshops/{id}/registrations"
   "GET /registrations/me"
   "DELETE /registrations/{id}"
+  "POST /workshops/{id}/waitlist"
+  "GET /waitlist/me"
+  "DELETE /waitlist/{id}"
   "OPTIONS /me"
   "OPTIONS /workshops"
   "OPTIONS /workshops/{id}"
   "OPTIONS /workshops/{id}/registrations"
   "OPTIONS /registrations/me"
   "OPTIONS /registrations/{id}"
+  "OPTIONS /workshops/{id}/waitlist"
+  "OPTIONS /waitlist/me"
+  "OPTIONS /waitlist/{id}"
 )
 EXISTING=$(aws apigatewayv2 get-routes --api-id "$API_ID" --query "Items[].RouteKey" --output text | tr '\t' '\n')
 for ROUTE in "${ROUTES[@]}"; do

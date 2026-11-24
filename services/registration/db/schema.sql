@@ -59,12 +59,25 @@ CREATE TABLE public.registrations (
 CREATE INDEX idx_workshops_organizer     ON public.workshops(organizer_id);
 CREATE INDEX idx_registrations_attendee  ON public.registrations(attendee_id);
 
+-- 3b) WAITLIST (Registration Service - Nourhan): people queueing for a full workshop.
+-- (Also available on its own in 002_waitlist.sql for databases created before it existed.)
+CREATE TABLE public.waitlist (
+  waitlist_id  SERIAL PRIMARY KEY,
+  workshop_id  INTEGER     NOT NULL REFERENCES public.workshops(workshop_id) ON DELETE CASCADE,
+  attendee_id  UUID        NOT NULL REFERENCES public.profiles(id),
+  joined_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT one_place_per_attendee UNIQUE (workshop_id, attendee_id)
+);
+CREATE INDEX idx_waitlist_queue    ON public.waitlist(workshop_id, joined_at, waitlist_id);
+CREATE INDEX idx_waitlist_attendee ON public.waitlist(attendee_id);
+
 -- 4) SECURITY: Row Level Security ON, with no policies.
 -- This blocks the browser (Supabase public key) from reading or changing these tables
 -- directly. Only our backend, which connects with the database connection string, can.
 ALTER TABLE public.profiles      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workshops     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.registrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.waitlist      ENABLE ROW LEVEL SECURITY;
 
 -- 5) SECURITY: block direct calls to the automatic sign-up function (Security Advisor fix)
 REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;

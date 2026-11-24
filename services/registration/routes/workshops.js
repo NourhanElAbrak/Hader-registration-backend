@@ -4,6 +4,7 @@ const { requireLogin, requireRole } = require('../middleware/auth');
 const { parseId, validateWorkshop } = require('../validators/workshopValidator');
 const workshops = require('../services/workshopService');
 const registrations = require('../services/registrationService');
+const waitlist = require('../services/waitlistService');
 
 const router = express.Router();
 
@@ -30,6 +31,22 @@ router.put('/:id', requireRole('organizer'), async (req, res) => {
   const updated = await workshops.updateWorkshop(id, req.user.userId, data);
   console.log(JSON.stringify({ event: 'workshop_updated', workshopId: id, userId: req.user.userId }));
   res.json(updated);
+});
+
+// DELETE /workshops/:id -> the organizer who created it deletes it (before it starts) -> 200
+router.delete('/:id', requireRole('organizer'), async (req, res) => {
+  const id = parseId(req.params.id);
+  const result = await workshops.deleteWorkshop(id, req.user.userId);
+  console.log(JSON.stringify({ event: 'workshop_deleted', workshopId: id, registrationsRemoved: result.registrationsRemoved, userId: req.user.userId }));
+  res.json(result);
+});
+
+// POST /workshops/:id/waitlist -> attendee joins the queue of a FULL workshop -> 201
+router.post('/:id/waitlist', requireRole('attendee'), async (req, res) => {
+  const id = parseId(req.params.id);
+  const entry = await waitlist.join(id, req.user.userId);
+  console.log(JSON.stringify({ event: 'waitlist_joined', workshopId: id, waitlistId: entry.waitlistId, position: entry.position, userId: req.user.userId }));
+  res.status(201).json(entry);
 });
 
 // POST /workshops/:id/registrations -> attendee registers -> 201

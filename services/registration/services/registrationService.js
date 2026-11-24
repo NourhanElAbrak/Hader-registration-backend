@@ -1,6 +1,7 @@
 // Database work for registrations: the core business rules of this service.
 const pool = require('../db/pool');
 const { ApiError } = require('../middleware/errors');
+const { promoteFromWaitlist } = require('./waitlistService');
 
 // Register an attendee. Everything happens in ONE transaction:
 // either all steps succeed, or nothing changes at all.
@@ -35,7 +36,7 @@ async function register(workshopId, attendeeId) {
       [workshopId]
     );
     if (seat.rowCount === 0) {
-      throw new ApiError(409, 'WORKSHOP_FULL', 'Sorry, this workshop is full.');
+      throw new ApiError(409, 'WORKSHOP_FULL', 'Sorry, this workshop is full. You can join the waiting list.');
     }
 
     // 4. Save the registration.
@@ -43,6 +44,12 @@ async function register(workshopId, attendeeId) {
       `INSERT INTO public.registrations (workshop_id, attendee_id)
        VALUES ($1, $2)
        RETURNING registration_id, workshop_id, attendee_id, created_at`,
+      [workshopId, attendeeId]
+    );
+
+    // If this person was waiting in the queue, they no longer need their place.
+    await client.query(
+      'DELETE FROM public.waitlist WHERE workshop_id = $1 AND attendee_id = $2',
       [workshopId, attendeeId]
     );
 
@@ -66,11 +73,25 @@ async function register(workshopId, attendeeId) {
   }
 }
 
-// Cancel a registration and give the seat back, in one transaction.
+// Cancel a registration and free the seat, in one transaction.
+// If people are waiting, the first one in the queue gets the seat automatically.
 async function cancel(registrationId, attendeeId) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Find the workshop first, then lock the WORKSHOP before the registration.
+    // Every transaction here locks in the same order (workshop first), so two of
+    // them can never wait for each other forever (no deadlock).
+    const { rows: found } = await client.query(
+      'SELECT workshop_id FROM public.registrations WHERE registration_id = $1',
+      [registrationId]
+    );
+    if (found.length === 0) throw new ApiError(404, 'NOT_FOUND', 'Registration not found.');
+    await client.query(
+      'SELECT 1 FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
+      [found[0].workshop_id]
+    );
+
     const { rows } = await client.query(
       'SELECT workshop_id, attendee_id FROM public.registrations WHERE registration_id = $1 FOR UPDATE',
       [registrationId]
@@ -86,8 +107,15 @@ async function cancel(registrationId, attendeeId) {
       'UPDATE public.workshops SET seats_left = seats_left + 1 WHERE workshop_id = $1',
       [rows[0].workshop_id]
     );
+    // The freed seat goes to the first person in the queue, if there is one.
+    const promoted = await promoteFromWaitlist(client, rows[0].workshop_id);
     await client.query('COMMIT');
-    return { registrationId, workshopId: rows[0].workshop_id, status: 'cancelled' };
+    return {
+      registrationId,
+      workshopId: rows[0].workshop_id,
+      status: 'cancelled',
+      seatGivenToWaitlist: promoted.length > 0
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

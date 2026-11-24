@@ -3,4 +3,5 @@ node_modules/
 .env
 .env.*
 !.env.example
-*.zipinfra/.site-build/
+*.zip
+infra/.site-build/
