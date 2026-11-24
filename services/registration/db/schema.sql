@@ -74,6 +74,27 @@ CREATE TABLE public.waitlist (
 CREATE INDEX idx_waitlist_queue    ON public.waitlist(workshop_id, joined_at, waitlist_id);
 CREATE INDEX idx_waitlist_attendee ON public.waitlist(attendee_id);
 
+-- 3c) NOTIFICATIONS (Registration Service - Nourhan). Also in 004_notifications.sql.
+-- One row = one message for one user (shown under the bell on the website).
+CREATE TABLE public.notifications (
+  notification_id  SERIAL PRIMARY KEY,
+  user_id          UUID         NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  -- If the workshop is deleted later, the message stays (it already contains the title).
+  workshop_id      INTEGER      REFERENCES public.workshops(workshop_id) ON DELETE SET NULL,
+  type             VARCHAR(40)  NOT NULL,
+  message          VARCHAR(300) NOT NULL,
+  created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  read_at          TIMESTAMPTZ
+);
+
+CREATE INDEX idx_notifications_user ON public.notifications(user_id, created_at DESC);
+
+-- The scheduled checks run every minute: this makes sure each scheduled message is
+-- created only once per person and workshop, however many times the check runs.
+CREATE UNIQUE INDEX one_scheduled_notice
+  ON public.notifications(user_id, workshop_id, type)
+  WHERE type IN ('registration_closed', 'workshop_reminder', 'waitlist_expired');
+
 -- 4) SECURITY: Row Level Security ON, with no policies.
 -- This blocks the browser (Supabase public key) from reading or changing these tables
 -- directly. Only our backend, which connects with the database connection string, can.
@@ -81,6 +102,7 @@ ALTER TABLE public.profiles      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workshops     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.registrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.waitlist      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 -- 5) SECURITY: block direct calls to the automatic sign-up function (Security Advisor fix)
 REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;

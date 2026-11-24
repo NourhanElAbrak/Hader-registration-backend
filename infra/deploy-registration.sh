@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Deploys the Workshop & Registration Service API to Floci (local AWS), following Lab 7:
-#   IAM role -> Lambda function -> API Gateway (HTTP API).
+# Deploys the Workshop & Registration Service to Floci (local AWS), following Lab 7:
+#   IAM role -> Lambda functions -> API Gateway (HTTP API) -> EventBridge Scheduler.
+# Two functions share one code package:
+#   hader-registration-api     the API (handler lambda.handler), behind API Gateway
+#   hader-registration-checks  scheduled checks (handler scheduler.handler), run every
+#                              minute by EventBridge Scheduler, with NO public route
 # The website itself is hosted on Vercel (see the HaderApp repo).
 # Run it from the HaderApp folder in Git Bash:   bash infra/deploy-registration.sh
 # Safe to run again: it updates what already exists instead of creating it twice.
@@ -10,6 +14,9 @@ export AWS_PROFILE="${AWS_PROFILE:-floci}" AWS_PAGER="" MSYS_NO_PATHCONV=1
 ACCOUNT="${ACCOUNT:-000000000000}"
 REGION="us-east-1"
 FN="hader-registration-api"
+CHECKS_FN="hader-registration-checks"
+SCHED_ROLE="hader-scheduler-role"
+SCHEDULE="hader-registration-checks-every-minute"
 ROLE="hader-registration-role"
 POLICY="hader-registration-logs"
 API_NAME="hader-http-api"
@@ -20,14 +27,14 @@ none() { [ -z "$1" ] || [ "$1" = "None" ]; }
 
 [ -f "$SERVICE/.env" ] || { echo "Run this from the HaderApp folder ($SERVICE/.env not found)."; exit 1; }
 
-step "1/5 Check that we are talking to Floci"
+step "1/6 Check that we are talking to Floci"
 acct=$(aws sts get-caller-identity --query Account --output text)
 if [ "$acct" != "$ACCOUNT" ]; then
   echo "Account is $acct, expected $ACCOUNT. Run: export AWS_PROFILE=floci"; exit 1
 fi
 echo "OK, account $acct"
 
-step "2/5 IAM role: the function may only write its own logs (least privilege)"
+step "2/6 IAM role: the function may only write its own logs (least privilege)"
 if ! aws iam get-role --role-name "$ROLE" >/dev/null 2>&1; then
   aws iam create-role --role-name "$ROLE" \
     --assume-role-policy-document file://infra/iam/lambda-trust-policy.json \
@@ -39,29 +46,34 @@ aws iam put-role-policy --role-name "$ROLE" --policy-name "$POLICY" \
   --policy-document file://infra/iam/registration-logs-policy.json
 echo "Policy $POLICY attached"
 
-step "3/5 Build lambda.zip and create or update the Lambda function"
+step "3/6 Build lambda.zip and create or update the two Lambda functions"
 (cd "$SERVICE" && npm install --silent && npm run zip)
 ENV_JSON=$(cd "$SERVICE" && node scripts/lambda-env.js)
 
-if aws lambda get-function --function-name "$FN" >/dev/null 2>&1; then
-  aws lambda update-function-code --function-name "$FN" \
-    --zip-file "fileb://$SERVICE/lambda.zip" --query LastModified --output text
-  aws lambda wait function-updated-v2 --function-name "$FN"
-  aws lambda update-function-configuration --function-name "$FN" \
-    --environment "$ENV_JSON" --timeout 15 --query LastModified --output text
-  aws lambda wait function-updated-v2 --function-name "$FN"
-else
-  aws lambda create-function --function-name "$FN" \
-    --runtime nodejs24.x --handler lambda.handler \
-    --role "arn:aws:iam::$ACCOUNT:role/$ROLE" \
-    --zip-file "fileb://$SERVICE/lambda.zip" --timeout 15 --memory-size 256 \
-    --environment "$ENV_JSON" --query FunctionArn --output text
-  aws lambda wait function-active-v2 --function-name "$FN"
-fi
+# deploy_fn NAME HANDLER: create the function, or update its code and settings.
+deploy_fn() {
+  if aws lambda get-function --function-name "$1" >/dev/null 2>&1; then
+    aws lambda update-function-code --function-name "$1" \
+      --zip-file "fileb://$SERVICE/lambda.zip" --query LastModified --output text
+    aws lambda wait function-updated-v2 --function-name "$1"
+    aws lambda update-function-configuration --function-name "$1" --handler "$2" \
+      --environment "$ENV_JSON" --timeout 15 --query LastModified --output text
+    aws lambda wait function-updated-v2 --function-name "$1"
+  else
+    aws lambda create-function --function-name "$1" \
+      --runtime nodejs24.x --handler "$2" \
+      --role "arn:aws:iam::$ACCOUNT:role/$ROLE" \
+      --zip-file "fileb://$SERVICE/lambda.zip" --timeout 15 --memory-size 256 \
+      --environment "$ENV_JSON" --query FunctionArn --output text
+    aws lambda wait function-active-v2 --function-name "$1"
+  fi
+  echo "Function $1 is ready"
+}
+deploy_fn "$FN" lambda.handler
+deploy_fn "$CHECKS_FN" scheduler.handler
 rm -f "$SERVICE/lambda.zip"
-echo "Function $FN is ready"
 
-step "4/5 API Gateway: one HTTP API, only the routes this service needs"
+step "4/6 API Gateway: one HTTP API, only the routes this service needs"
 API_ID=$(aws apigatewayv2 get-apis --query "Items[?Name=='$API_NAME'].ApiId | [0]" --output text)
 if none "$API_ID"; then
   API_ID=$(aws apigatewayv2 create-api --name "$API_NAME" --protocol-type HTTP --query ApiId --output text)
@@ -100,6 +112,10 @@ ROUTES=(
   "OPTIONS /workshops/{id}/waitlist"
   "OPTIONS /waitlist/me"
   "OPTIONS /waitlist/{id}"
+  "GET /notifications/me"
+  "POST /notifications/read"
+  "OPTIONS /notifications/me"
+  "OPTIONS /notifications/read"
 )
 EXISTING=$(aws apigatewayv2 get-routes --api-id "$API_ID" --query "Items[].RouteKey" --output text | tr '\t' '\n')
 for ROUTE in "${ROUTES[@]}"; do
@@ -130,7 +146,36 @@ else
 fi
 API_URL="http://$API_ID.execute-api.localhost.floci.io:4566"
 
-step "5/5 Quick test"
+step "5/6 EventBridge Scheduler: run the checks every minute"
+# The scheduler gets its own role that may ONLY invoke the checks function (least privilege).
+if ! aws iam get-role --role-name "$SCHED_ROLE" >/dev/null 2>&1; then
+  aws iam create-role --role-name "$SCHED_ROLE" \
+    --assume-role-policy-document file://infra/iam/scheduler-trust-policy.json \
+    --query Role.Arn --output text
+else
+  echo "Role $SCHED_ROLE already exists"
+fi
+aws iam put-role-policy --role-name "$SCHED_ROLE" --policy-name hader-scheduler-invoke \
+  --policy-document file://infra/iam/scheduler-invoke-policy.json
+TARGET="{\"Arn\":\"arn:aws:lambda:$REGION:$ACCOUNT:function:$CHECKS_FN\",\"RoleArn\":\"arn:aws:iam::$ACCOUNT:role/$SCHED_ROLE\"}"
+if aws scheduler get-schedule --name "$SCHEDULE" >/dev/null 2>&1; then
+  aws scheduler update-schedule --name "$SCHEDULE" --schedule-expression "rate(1 minute)" \
+    --flexible-time-window Mode=OFF --target "$TARGET" >/dev/null
+  echo "Schedule $SCHEDULE updated (every minute)"
+else
+  aws scheduler create-schedule --name "$SCHEDULE" --schedule-expression "rate(1 minute)" \
+    --flexible-time-window Mode=OFF --target "$TARGET" >/dev/null
+  echo "Schedule $SCHEDULE created (every minute)"
+fi
+echo "Running the checks once now:"
+if aws lambda invoke --function-name "$CHECKS_FN" checks-result.json >/dev/null 2>&1; then
+  cat checks-result.json; echo
+else
+  echo "(could not run it now; the schedule will run it within a minute)"
+fi
+rm -f checks-result.json
+
+step "6/6 Quick test"
 echo "GET $API_URL/health"
 curl -s -m 30 "$API_URL/health" || echo "(no answer yet: wait 30 seconds and try again)"
 echo
@@ -138,3 +183,4 @@ echo
 echo "Done."
 echo "  API:      $API_URL"
 echo "  Logs:     aws logs tail /aws/lambda/$FN --since 15m --format short"
+echo "  Checks:   aws logs tail /aws/lambda/$CHECKS_FN --since 15m --format short"

@@ -3,6 +3,7 @@
 const pool = require('../db/pool');
 const { ApiError } = require('../middleware/errors');
 const { promoteFromWaitlist } = require('./waitlistService');
+const { notify } = require('./notificationService');
 
 // Turns a database row into the JSON shape in the API contract.
 function toWorkshop(row) {
@@ -100,7 +101,7 @@ async function deleteWorkshop(workshopId, organizerId) {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      'SELECT organizer_id, workshop_date, total_seats, seats_left FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
+      'SELECT organizer_id, workshop_date, total_seats, seats_left, title FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
       [workshopId]
     );
     if (rows.length === 0) throw new ApiError(404, 'NOT_FOUND', 'Workshop not found.');
@@ -110,6 +111,20 @@ async function deleteWorkshop(workshopId, organizerId) {
     }
     if (new Date(w.workshop_date) <= new Date()) {
       throw new ApiError(409, 'WORKSHOP_STARTED', 'This workshop has already started, so it is kept as a record and cannot be deleted.');
+    }
+
+    // Tell everyone with a seat or a place in the queue, in the same transaction.
+    const { rows: people } = await client.query(
+      `SELECT attendee_id, 'registered' AS kind FROM public.registrations WHERE workshop_id = $1
+       UNION ALL
+       SELECT attendee_id, 'waiting' AS kind FROM public.waitlist WHERE workshop_id = $1`,
+      [workshopId]
+    );
+    for (const p of people) {
+      await notify(client, p.attendee_id, workshopId, 'workshop_deleted',
+        p.kind === 'registered'
+          ? `"${w.title}" was cancelled by the organizer, so your registration was removed.`
+          : `"${w.title}" was cancelled by the organizer, so your place in its waiting list was removed.`);
     }
 
     await client.query('DELETE FROM public.workshops WHERE workshop_id = $1', [workshopId]);

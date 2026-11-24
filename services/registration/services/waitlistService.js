@@ -3,6 +3,7 @@
 // person in the queue gets it automatically, inside the same transaction.
 const pool = require('../db/pool');
 const { ApiError } = require('../middleware/errors');
+const { notify } = require('./notificationService');
 
 // Give free seats to the people at the front of the queue.
 // Must be called inside a transaction that already holds the workshop row lock
@@ -12,7 +13,7 @@ async function promoteFromWaitlist(client, workshopId) {
   const promoted = [];
   for (;;) {
     const { rows: w } = await client.query(
-      'SELECT seats_left, workshop_date FROM public.workshops WHERE workshop_id = $1',
+      'SELECT seats_left, workshop_date, title FROM public.workshops WHERE workshop_id = $1',
       [workshopId]
     );
     if (w.length === 0 || w[0].seats_left <= 0) break;
@@ -39,6 +40,8 @@ async function promoteFromWaitlist(client, workshopId) {
       'UPDATE public.workshops SET seats_left = seats_left - 1 WHERE workshop_id = $1',
       [workshopId]
     );
+    await notify(client, next[0].attendee_id, workshopId, 'waitlist_promoted',
+      `Good news: a seat in "${w[0].title}" became free, and it is now yours. You are registered.`);
     promoted.push({ attendeeId: next[0].attendee_id, registrationId: reg[0].registration_id });
     console.log(JSON.stringify({
       event: 'waitlist_promoted', workshopId,

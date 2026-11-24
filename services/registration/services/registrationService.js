@@ -2,6 +2,7 @@
 const pool = require('../db/pool');
 const { ApiError } = require('../middleware/errors');
 const { promoteFromWaitlist } = require('./waitlistService');
+const { notify } = require('./notificationService');
 
 // Registration deadline: after it, nobody can register or join the waiting list.
 // (People already in the queue still get seats that free up, until the workshop starts.)
@@ -184,7 +185,7 @@ async function removeAttendee(workshopId, registrationId, organizerId) {
   try {
     await client.query('BEGIN');
     const { rows: w } = await client.query(
-      'SELECT organizer_id, workshop_date FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
+      'SELECT organizer_id, workshop_date, title FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
       [workshopId]
     );
     if (w.length === 0) throw new ApiError(404, 'NOT_FOUND', 'Workshop not found.');
@@ -206,6 +207,8 @@ async function removeAttendee(workshopId, registrationId, organizerId) {
       'UPDATE public.workshops SET seats_left = seats_left + 1 WHERE workshop_id = $1',
       [workshopId]
     );
+    await notify(client, r[0].attendee_id, workshopId, 'removed_by_organizer',
+      `The organizer removed your registration for "${w[0].title}".`);
     const promoted = await promoteFromWaitlist(client, workshopId);
     await client.query('COMMIT');
     return {

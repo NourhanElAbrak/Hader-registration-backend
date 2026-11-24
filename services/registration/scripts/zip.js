@@ -6,7 +6,7 @@ const archiver = require('archiver');
 
 const root = path.resolve(__dirname, '..');
 const out = path.join(root, 'lambda.zip');
-const include = ['app.js', 'lambda.js', 'package.json', 'db', 'middleware', 'routes', 'services', 'validators', 'certs', 'node_modules'];
+const include = ['app.js', 'lambda.js', 'scheduler.js', 'package.json', 'db', 'middleware', 'routes', 'services', 'validators', 'certs', 'node_modules'];
 
 const output = fs.createWriteStream(out);
 const zip = archiver('zip', { zlib: { level: 9 } });

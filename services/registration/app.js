@@ -56,6 +56,7 @@ app.use('/me', require('./routes/me'));
 app.use('/workshops', require('./routes/workshops'));
 app.use('/registrations', require('./routes/registrations'));
 app.use('/waitlist', require('./routes/waitlist'));
+app.use('/notifications', require('./routes/notifications'));
 
 app.use(notFoundRoute);
 app.use(errorHandler);

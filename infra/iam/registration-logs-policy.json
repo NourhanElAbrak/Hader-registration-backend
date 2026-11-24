@@ -4,8 +4,15 @@
     {
       "Sid": "WriteOwnLogsOnly",
       "Effect": "Allow",
-      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
-      "Resource": "arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/hader-registration-api:*"
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/hader-registration-api:*",
+        "arn:aws:logs:us-east-1:000000000000:log-group:/aws/lambda/hader-registration-checks:*"
+      ]
     }
   ]
 }
