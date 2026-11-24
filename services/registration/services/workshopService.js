@@ -11,6 +11,7 @@ function toWorkshop(row) {
     title: row.title,
     description: row.description,
     date: row.workshop_date,
+    registrationDeadline: row.registration_deadline,
     totalSeats: row.total_seats,
     seatsLeft: row.seats_left,
     organizerId: row.organizer_id,
@@ -22,10 +23,10 @@ function toWorkshop(row) {
 
 async function createWorkshop(organizerId, w) {
   const { rows } = await pool.query(
-    `INSERT INTO public.workshops (title, description, workshop_date, total_seats, seats_left, organizer_id)
-     VALUES ($1, $2, $3, $4, $4, $5)
+    `INSERT INTO public.workshops (title, description, workshop_date, total_seats, seats_left, organizer_id, registration_deadline)
+     VALUES ($1, $2, $3, $4, $4, $5, $6)
      RETURNING *`,
-    [w.title, w.description, w.date, w.totalSeats, organizerId]
+    [w.title, w.description, w.date, w.totalSeats, organizerId, w.registrationDeadline]
   );
   return toWorkshop(rows[0]);
 }
@@ -67,10 +68,11 @@ async function updateWorkshop(workshopId, organizerId, w) {
     const { rows: updated } = await client.query(
       `UPDATE public.workshops
        SET title = $1, description = $2, workshop_date = $3,
-           total_seats = $4::int, seats_left = $4::int - $5::int
+           total_seats = $4::int, seats_left = $4::int - $5::int,
+           registration_deadline = $7
        WHERE workshop_id = $6
        RETURNING *`,
-      [w.title, w.description, w.date, w.totalSeats, registered, workshopId]
+      [w.title, w.description, w.date, w.totalSeats, registered, workshopId, w.registrationDeadline]
     );
     // If the organizer added seats, people waiting in the queue get them now.
     const promoted = await promoteFromWaitlist(client, workshopId);

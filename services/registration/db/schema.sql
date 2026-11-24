@@ -43,7 +43,10 @@ CREATE TABLE public.workshops (
   seats_left     INTEGER       NOT NULL CHECK (seats_left >= 0),
   organizer_id   UUID          NOT NULL REFERENCES public.profiles(id),
   created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  CONSTRAINT seats_left_not_above_total CHECK (seats_left <= total_seats)
+  -- Optional: after this time nobody can register (NULL = open until it starts). See 003_registration_deadline.sql
+  registration_deadline TIMESTAMPTZ,
+  CONSTRAINT seats_left_not_above_total CHECK (seats_left <= total_seats),
+  CONSTRAINT deadline_not_after_start CHECK (registration_deadline IS NULL OR registration_deadline <= workshop_date)
 );
 
 -- 3) REGISTRATIONS (Registration Service - Nourhan)

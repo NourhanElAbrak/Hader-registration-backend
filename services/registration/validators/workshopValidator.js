@@ -15,12 +15,13 @@ function parseId(value, name = 'id') {
 }
 
 // Body for creating or editing a workshop:
-// { "title": "...", "description": "...", "date": "2026-12-01T10:00:00Z", "totalSeats": 30 }
+// { "title": "...", "description": "...", "date": "2026-12-01T10:00:00Z", "totalSeats": 30,
+//   "registrationDeadline": "2026-11-30T18:00:00Z" }   <- optional; empty or missing = open until it starts
 function validateWorkshop(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw bad('Request body must be a JSON object.');
   }
-  const { title, description = '', date, totalSeats } = body;
+  const { title, description = '', date, totalSeats, registrationDeadline = null } = body;
 
   if (typeof title !== 'string' || title.trim().length < 3 || title.trim().length > 100) {
     throw bad('Title must contain between 3 and 100 characters.');
@@ -38,7 +39,21 @@ function validateWorkshop(body) {
     throw bad('totalSeats must be a whole number between 1 and 1000.');
   }
 
+  // Optional deadline: must be a valid date, and not after the workshop starts.
+  // An organizer may set it to a time that has passed, to close registration early.
+  let deadline = null;
+  if (registrationDeadline !== null && registrationDeadline !== '') {
+    if (typeof registrationDeadline !== 'string' || Number.isNaN(Date.parse(registrationDeadline))) {
+      throw bad('registrationDeadline must be a valid date, for example 2026-11-30T18:00:00Z.');
+    }
+    if (new Date(registrationDeadline) > new Date(date)) {
+      throw bad('The registration deadline cannot be after the workshop starts.');
+    }
+    deadline = new Date(registrationDeadline).toISOString();
+  }
+
   return {
+    registrationDeadline: deadline,
     title: title.trim(),
     description: description.trim(),
     date: new Date(date).toISOString(),

@@ -63,4 +63,16 @@ router.get('/:id/registrations', requireRole('organizer'), async (req, res) => {
   res.json(await registrations.listForWorkshop(id, req.user.userId));
 });
 
+// DELETE /workshops/:id/registrations/:registrationId -> the workshop's organizer removes an attendee -> 200
+router.delete('/:id/registrations/:registrationId', requireRole('organizer'), async (req, res) => {
+  const id = parseId(req.params.id);
+  const registrationId = parseId(req.params.registrationId, 'registrationId');
+  const result = await registrations.removeAttendee(id, registrationId, req.user.userId);
+  console.log(JSON.stringify({
+    event: 'attendee_removed', workshopId: id, registrationId,
+    removedUserId: result.attendeeId, seatGivenToWaitlist: result.seatGivenToWaitlist, userId: req.user.userId
+  }));
+  res.json(result);
+});
+
 module.exports = router;

@@ -3,6 +3,14 @@ const pool = require('../db/pool');
 const { ApiError } = require('../middleware/errors');
 const { promoteFromWaitlist } = require('./waitlistService');
 
+// Registration deadline: after it, nobody can register or join the waiting list.
+// (People already in the queue still get seats that free up, until the workshop starts.)
+function assertRegistrationOpen(workshop) {
+  if (workshop.registration_deadline && new Date(workshop.registration_deadline) <= new Date()) {
+    throw new ApiError(400, 'REGISTRATION_CLOSED', 'Registration for this workshop has closed.');
+  }
+}
+
 // Register an attendee. Everything happens in ONE transaction:
 // either all steps succeed, or nothing changes at all.
 async function register(workshopId, attendeeId) {
@@ -13,13 +21,14 @@ async function register(workshopId, attendeeId) {
     // 1. Lock the workshop row. If two people click "Register" for the last seat
     //    at the same moment, the second one waits here until the first finishes.
     const { rows } = await client.query(
-      'SELECT workshop_date, seats_left FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
+      'SELECT workshop_date, seats_left, registration_deadline FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
       [workshopId]
     );
     if (rows.length === 0) throw new ApiError(404, 'NOT_FOUND', 'Workshop not found.');
     if (new Date(rows[0].workshop_date) <= new Date()) {
       throw new ApiError(400, 'WORKSHOP_STARTED', 'This workshop has already started.');
     }
+    assertRegistrationOpen(rows[0]);
 
     // 2. Already registered? (The UNIQUE rule in the table also guarantees this.)
     const dup = await client.query(
@@ -167,4 +176,51 @@ async function listForWorkshop(workshopId, organizerId) {
   }));
 }
 
-module.exports = { register, cancel, listMine, listForWorkshop };
+// The workshop's organizer removes an attendee (for example a no-show or a duplicate account).
+// Only the organizer who owns the workshop, only before it starts. The freed seat goes to
+// the first person in the waiting list, in the same transaction.
+async function removeAttendee(workshopId, registrationId, organizerId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: w } = await client.query(
+      'SELECT organizer_id, workshop_date FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
+      [workshopId]
+    );
+    if (w.length === 0) throw new ApiError(404, 'NOT_FOUND', 'Workshop not found.');
+    if (w[0].organizer_id !== organizerId) {
+      throw new ApiError(403, 'FORBIDDEN', 'Only the organizer of this workshop can remove attendees.');
+    }
+    if (new Date(w[0].workshop_date) <= new Date()) {
+      throw new ApiError(409, 'WORKSHOP_STARTED', 'This workshop has already started, so its attendee list is kept as a record.');
+    }
+    // The registration must belong to THIS workshop (stops removing people from other workshops).
+    const { rows: r } = await client.query(
+      'SELECT attendee_id FROM public.registrations WHERE registration_id = $1 AND workshop_id = $2 FOR UPDATE',
+      [registrationId, workshopId]
+    );
+    if (r.length === 0) throw new ApiError(404, 'NOT_FOUND', 'This person is not registered for this workshop.');
+
+    await client.query('DELETE FROM public.registrations WHERE registration_id = $1', [registrationId]);
+    await client.query(
+      'UPDATE public.workshops SET seats_left = seats_left + 1 WHERE workshop_id = $1',
+      [workshopId]
+    );
+    const promoted = await promoteFromWaitlist(client, workshopId);
+    await client.query('COMMIT');
+    return {
+      registrationId, workshopId, attendeeId: r[0].attendee_id,
+      status: 'removed', seatGivenToWaitlist: promoted.length > 0
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23503') { // e.g. the Attendance service already has check-ins for this registration
+      throw new ApiError(409, 'REGISTRATION_IN_USE', 'This attendee already has attendance records, so they cannot be removed.');
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { register, cancel, listMine, listForWorkshop, removeAttendee, assertRegistrationOpen };

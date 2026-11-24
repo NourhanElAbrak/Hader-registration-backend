@@ -55,12 +55,15 @@ async function join(workshopId, attendeeId) {
     await client.query('BEGIN');
     // Lock the workshop so "is it full?" cannot change while we decide.
     const { rows } = await client.query(
-      'SELECT workshop_date, seats_left FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
+      'SELECT workshop_date, seats_left, registration_deadline FROM public.workshops WHERE workshop_id = $1 FOR UPDATE',
       [workshopId]
     );
     if (rows.length === 0) throw new ApiError(404, 'NOT_FOUND', 'Workshop not found.');
     if (new Date(rows[0].workshop_date) <= new Date()) {
       throw new ApiError(400, 'WORKSHOP_STARTED', 'This workshop has already started.');
+    }
+    if (rows[0].registration_deadline && new Date(rows[0].registration_deadline) <= new Date()) {
+      throw new ApiError(400, 'REGISTRATION_CLOSED', 'Registration for this workshop has closed.');
     }
     if (rows[0].seats_left > 0) {
       throw new ApiError(409, 'SEATS_AVAILABLE', 'This workshop still has free seats. Register instead.');
