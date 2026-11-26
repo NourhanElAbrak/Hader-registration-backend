@@ -107,6 +107,9 @@ async function runScheduledChecks() {
        WHERE w.workshop_id = q.workshop_id AND w.workshop_date <= NOW()`
     );
 
+    // 4) Housekeeping: rate-limit counters older than 10 minutes are no longer needed.
+    await client.query("DELETE FROM public.rate_limits WHERE window_start < NOW() - INTERVAL '10 minutes'");
+
     await client.query('COMMIT');
     return {
       registrationClosedNotices: closed.rowCount,

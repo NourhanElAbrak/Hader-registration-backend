@@ -95,6 +95,14 @@ CREATE UNIQUE INDEX one_scheduled_notice
   ON public.notifications(user_id, workshop_id, type)
   WHERE type IN ('registration_closed', 'workshop_reminder', 'waitlist_expired');
 
+-- 3d) RATE LIMITS (Registration Service - Nourhan). Also in 005_rate_limits.sql.
+CREATE TABLE public.rate_limits (
+  bucket        VARCHAR(100) NOT NULL,
+  window_start  TIMESTAMPTZ  NOT NULL,
+  hits          INTEGER      NOT NULL DEFAULT 1,
+  PRIMARY KEY (bucket, window_start)
+);
+
 -- 4) SECURITY: Row Level Security ON, with no policies.
 -- This blocks the browser (Supabase public key) from reading or changing these tables
 -- directly. Only our backend, which connects with the database connection string, can.
@@ -103,6 +111,7 @@ ALTER TABLE public.workshops     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.registrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.waitlist      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rate_limits   ENABLE ROW LEVEL SECURITY;
 
 -- 5) SECURITY: block direct calls to the automatic sign-up function (Security Advisor fix)
 REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;

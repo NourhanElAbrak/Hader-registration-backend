@@ -2,6 +2,7 @@
 const express = require('express');
 const pool = require('./db/pool');
 const { ApiError, notFoundRoute, errorHandler } = require('./middleware/errors');
+const { rateLimit } = require('./middleware/rateLimit');
 
 const app = express();
 
@@ -18,6 +19,9 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+// Rate limit every request except the browser's CORS check (answered above).
+app.use(rateLimit);
 
 app.use(express.json({ limit: '10kb' }));
 
@@ -42,10 +46,11 @@ app.use((req, res, next) => {
 });
 
 // Health check: proves the API is running AND can reach the database.
+// It is public, so it reveals nothing about the data (no counts, no names).
 app.get('/health', async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT COUNT(*)::int AS workshops FROM public.workshops');
-    res.json({ status: 'ok', database: 'connected', workshops: rows[0].workshops });
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', database: 'connected' });
   } catch (err) {
     next(err);
   }

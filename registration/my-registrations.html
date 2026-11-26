@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hader - My seats</title>
+  <link rel="stylesheet" href="../shared/style.css">
+</head>
+<body>
+  <div id="nav"></div>
+
+  <main>
+    <h1>My seats</h1>
+    <p class="lead">Workshops you have registered for. Cancel if you cannot make it, so someone else can take your seat.</p>
+    <p id="message" class="message" hidden></p>
+    <section class="workshops" id="registration-list">
+      <p class="empty">Loading...</p>
+    </section>
+
+    <h2 class="section-title" id="queue-title" hidden>Waiting lists</h2>
+    <p class="lead" id="queue-lead" hidden>Workshops that were full when you tried. If someone cancels, the first person in line gets the seat automatically.</p>
+    <section class="workshops" id="queue-list" hidden></section>
+  </main>
+
+  <script src="../shared/config.js"></script>
+  <script src="../shared/auth.js"></script>
+  <script src="../shared/api.js"></script>
+  <script src="my-registrations.js"></script>
+</body>
+</html>

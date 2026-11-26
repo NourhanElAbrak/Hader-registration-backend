@@ -18,5 +18,6 @@ const variables = {
   NODE_ENV: 'production'
 };
 if (process.env.DB_CA_PATH) variables.DB_CA_PATH = process.env.DB_CA_PATH;
+if (process.env.RATE_LIMIT_PER_MINUTE) variables.RATE_LIMIT_PER_MINUTE = process.env.RATE_LIMIT_PER_MINUTE;
 
 process.stdout.write(JSON.stringify({ Variables: variables }));
